@@ -14,11 +14,7 @@ import java.math.BigInteger;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.Registry;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import no.hvl.dat110.node.Message;
 import no.hvl.dat110.node.OperationType;
@@ -88,16 +84,22 @@ public class FileManager extends Thread {
 	public Set<Message> requestActiveNodesForFile(String filename) throws RemoteException {
 		
 		// generate the N replica keyids from the filename
-		
+		Set<Message> msg = new HashSet<>();
 		// create replicas
-		
+		createReplicaFiles(filename);
 		// findsuccessors for each file replica and save the result (fileID) for each successor 
-		
-		// if we find the successor node of fileID, we can retrieve the message associated with a fileID by calling the getFilesMetadata() of chordnode.
-		
-		// save the message in a list but eliminate duplicated entries. e.g a node may be repeated because it maps more than one replicas to its id. (use checkDuplicateActiveNode)
-		
-		return null;	// return value is a Set of type Message		
+		for (int i = 0; i < nfiles; i++) {
+			ChordNodeInterface c = chordnode.findSuccessor(replicafiles[i]);
+			if (c != null) {
+				// if we find the successor node of fileID, we can retrieve the message associated with a fileID by calling the getFilesMetadata() of chordnode.
+				Message m = (c.getFilesMetadata().get(replicafiles[i]));
+				// save the message in a list but eliminate duplicated entries. e.g a node may be repeated because it maps more than one replicas to its id. (use checkDuplicateActiveNode)
+				if(!checkDuplicateActiveNode(msg, m)) {
+					msg.add(m);
+				}
+			}
+		}
+		return msg;	// return value is a Set of type Message
 	}
 	
 	private boolean checkDuplicateActiveNode(Set<Message> activenodesdata, Message nodetocheck) {
@@ -113,73 +115,101 @@ public class FileManager extends Thread {
 	public boolean requestToReadFileFromAnyActiveNode(String filename) throws RemoteException, NotBoundException {
 		
 		// get all the activenodes that have the file (replicas) i.e. requestActiveNodesForFile(String filename)
-			
+		Set<Message> activenodes = requestActiveNodesForFile(filename);
 		// choose any available node
-		
+		Iterator<Message> i = activenodes.iterator();
+		Message msg;
+		msg = i.next();
 		// locate the registry and see if the node is still active by retrieving its remote object
-		
+		Registry reg = Util.locateRegistry(msg.getNodeIP());
+		ChordNodeInterface node = ((ChordNodeInterface) reg.lookup(msg.getNodeID().toString()));
 		// build the operation to be performed - Read and request for votes in existing active node message
-		
+		msg.setOptype(OperationType.READ);
+		msg.setNodeIP(node.getNodeIP());
+		msg.setNodeID(node.getNodeID());
 		// set the active nodes holding replica files in the contact node (setActiveNodesForFile)
- 		
+		node.setActiveNodesForFile(activenodes);
 		// set the NodeIP in the message (replace ip with )
-		
-		
+		msg.setNodeIP(node.getNodeIP());
 		// send a request to a node and get the voters decision
-		
+		boolean result = node.requestReadOperation(msg);
 		// put the decision back in the message
-		
+		msg.setAcknowledged(result);
 		// multicast voters' decision to the rest of the nodes
-		
+		node.multicastVotersDecision(msg);
 		// if majority votes
-		
-		// acquire lock to CS and also increments localclock
-		
-		// perform operation by calling Operations class
-		
-		// optional: retrieve content of file on local resource
-		
-		// send message to let replicas release read lock they are holding
-		
-		// release locks after operations
-		
-			
-			
-		return false;		// change to your final answer
+		if(result) {
+			// acquire lock to CS and also increments localclock
+			node.incrementclock();
+			node.acquireLock();
+			// perform operation by calling Operations class
+			Operations oper = new Operations(node, msg, activenodes);
+			oper.performOperation();
+			// release locks after operations
+			node.releaseLocks();
+			// send message to let replicas release read lock they are holding
+			node.multicastUpdateOrReadReleaseLockOperation(msg);
+			try {
+				sleep(3000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+
+		return result;		// change to your final answer
 	}
 	
 	public boolean requestWriteToFileFromAnyActiveNode(String filename, String newcontent) throws RemoteException, NotBoundException {
 		
 		// get all the activenodes that have the file (replicas) i.e. requestActiveNodesForFile(String filename)
-		
+		Set<Message> activenodes = requestActiveNodesForFile(filename);
+
 		// choose any available node
-		
+		Iterator<Message> i = activenodes.iterator();
+		Message msg = i.next();
+
 		// locate the registry and see if the node is still active by retrieving its remote object
-		
+		Registry reg = Util.locateRegistry(msg.getNodeIP());
+		ChordNodeInterface node = (ChordNodeInterface) reg.lookup(msg.getNodeID().toString());
+
 		// build the operation to be performed - Read and request for votes in existing active node message
-		
+		msg.setOptype(OperationType.WRITE);
+		msg.setNodeIP(node.getNodeIP());
+		msg.setNodeID(node.getNodeID());
+		msg.setNewcontent(newcontent);
+
 		// set the active nodes holding replica files in the contact node (setActiveNodesForFile)
- 		
+		node.setActiveNodesForFile(activenodes);
 		// set the NodeIP in the message (replace ip with )
-		
+		msg.setNodeIP(node.getNodeIP());
 		
 		// send a request to a node and get the voters decision
-		
+		boolean result = node.requestWriteOperation(msg);
+
 		// put the decision back in the message
-		
+		msg.setAcknowledged(result);
+
 		// multicast voters' decision to the rest of the nodes
-		
+		node.multicastVotersDecision(msg);
+
 		// if majority votes
-		
-		// acquire lock to CS and also increments localclock
-		
-		// perform operation by calling Operations class
-		
-		// update replicas and let replicas release CS lock they are holding
-		
-		// release locks after operations
-		
-		return false;  // change to your final answer
+		if(result){
+
+			// acquire lock to CS and also increments localclock
+			node.incrementclock();
+			node.acquireLock();
+
+			// perform operation by calling Operations class
+			Operations oper = new Operations(node, msg, activenodes);
+			oper.performOperation();
+
+			// release locks after operations
+			node.releaseLocks();
+			// update replicas and let replicas release CS lock they are holding
+			node.multicastUpdateOrReadReleaseLockOperation(msg);
+
+		}
+		return result;  // change to your final answer
 
 	}
 
