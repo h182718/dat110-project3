@@ -171,10 +171,11 @@ public class MutexProcess extends UnicastRemoteObject implements ProcessInterfac
         else {
             if (message.getClock() < counter) {
                 message.setAcknowledged(true);
+                acquireLock();
 
             } else {
                 message.setAcknowledged(false);
-                acquireLock();
+
             }
         }
 

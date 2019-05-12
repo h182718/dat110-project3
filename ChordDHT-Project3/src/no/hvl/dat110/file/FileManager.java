@@ -140,7 +140,7 @@ public class FileManager extends Thread {
 		// if majority votes
 		if(result) {
 			// acquire lock to CS and also increments localclock
-			node.incrementclock();
+
 			node.acquireLock();
 			// perform operation by calling Operations class
 			Operations oper = new Operations(node, msg, activenodes);
@@ -196,7 +196,7 @@ public class FileManager extends Thread {
 		if(result){
 
 			// acquire lock to CS and also increments localclock
-			node.incrementclock();
+
 			node.acquireLock();
 
 			// perform operation by calling Operations class
@@ -215,7 +215,6 @@ public class FileManager extends Thread {
 
 	/**
 	 * create the localfile with the node's name and id as content of the file
-	 * @param nodename
 	 * @throws RemoteException 
 	 */
 	public void createLocalFile() throws RemoteException {
